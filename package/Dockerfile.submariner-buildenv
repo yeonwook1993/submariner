@@ -1,0 +1,43 @@
+FROM fedora:33
+ARG TARGETPLATFORM
+
+# dnf cache and base packages, shared across all build sub-directories
+RUN dnf -y --setopt=install_weak_deps=0 --nodocs \
+           --installroot /output/base --releasever 33 \
+           install glibc bash glibc-minimal-langpack coreutils-single
+
+# gateway
+
+# iproute and iptables are used internally
+# libreswan provides IKE
+# procps-ng is needed for sysctl
+RUN cp -a /output/base /output/gateway && \
+    dnf -y --setopt=install_weak_deps=0 --nodocs \
+           --installroot /output/gateway --releasever 33 \
+           install libcurl-minimal \
+                   iproute iptables iptables-nft libreswan procps-ng && \
+    dnf -y --installroot /output/gateway --releasever 33 clean all
+
+# globalnet
+
+RUN cp -a /output/base /output/globalnet && \
+    dnf -y --setopt=install_weak_deps=0 --nodocs \
+           --installroot /output/globalnet --releasever 33 \
+           install iproute iptables iptables-nft && \
+    dnf -y --installroot /output/globalnet --releasever 33 clean all
+
+# networkplugin-syncer
+
+RUN cp -a /output/base /output/networkplugin-syncer && \
+    dnf -y --setopt=install_weak_deps=0 --nodocs \
+           --installroot /output/networkplugin-syncer --releasever 33 \
+           install https://kojipkgs.fedoraproject.org//packages/ovn/20.06.2/4.fc33/x86_64/ovn-20.06.2-4.fc33.x86_64.rpm && \
+    dnf -y --installroot /output/networkplugin-syncer --releasever 33 clean all
+
+# route-agent
+
+RUN cp -a /output/base /output/route-agent && \
+    dnf -y --setopt=install_weak_deps=0 --nodocs \
+           --installroot /output/route-agent --releasever 33 \
+           install iproute iptables iptables-nft openvswitch procps-ng && \
+    dnf -y --installroot /output/route-agent --releasever 33 clean all
