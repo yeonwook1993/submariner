@@ -32,59 +32,59 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// ClusterInformer provides access to a shared informer and lister for
-// Clusters.
-type ClusterInformer interface {
+// ClusterGlobalEgressIPInformer provides access to a shared informer and lister for
+// ClusterGlobalEgressIPs.
+type ClusterGlobalEgressIPInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1.ClusterLister
+	Lister() v1.ClusterGlobalEgressIPLister
 }
 
-type clusterInformer struct {
+type clusterGlobalEgressIPInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 	namespace        string
 }
 
-// NewClusterInformer constructs a new informer for Cluster type.
+// NewClusterGlobalEgressIPInformer constructs a new informer for ClusterGlobalEgressIP type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewClusterInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredClusterInformer(client, namespace, resyncPeriod, indexers, nil)
+func NewClusterGlobalEgressIPInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredClusterGlobalEgressIPInformer(client, namespace, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredClusterInformer constructs a new informer for Cluster type.
+// NewFilteredClusterGlobalEgressIPInformer constructs a new informer for ClusterGlobalEgressIP type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredClusterInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredClusterGlobalEgressIPInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SubmarinerV1().Clusters(namespace).List(context.TODO(), options)
+				return client.SubmarinerV1().ClusterGlobalEgressIPs(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SubmarinerV1().Clusters(namespace).Watch(context.TODO(), options)
+				return client.SubmarinerV1().ClusterGlobalEgressIPs(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&submarineriov1.Cluster{},
+		&submarineriov1.ClusterGlobalEgressIP{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *clusterInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredClusterInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *clusterGlobalEgressIPInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredClusterGlobalEgressIPInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *clusterInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&submarineriov1.Cluster{}, f.defaultInformer)
+func (f *clusterGlobalEgressIPInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&submarineriov1.ClusterGlobalEgressIP{}, f.defaultInformer)
 }
 
-func (f *clusterInformer) Lister() v1.ClusterLister {
-	return v1.NewClusterLister(f.Informer().GetIndexer())
+func (f *clusterGlobalEgressIPInformer) Lister() v1.ClusterGlobalEgressIPLister {
+	return v1.NewClusterGlobalEgressIPLister(f.Informer().GetIndexer())
 }
