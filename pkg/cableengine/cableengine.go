@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog"
 
 	// Add supported drivers
+	_ "github.com/submariner-io/submariner/pkg/cable/gre"
 	_ "github.com/submariner-io/submariner/pkg/cable/libreswan"
 	_ "github.com/submariner-io/submariner/pkg/cable/vxlan"
 	_ "github.com/submariner-io/submariner/pkg/cable/wireguard"
