@@ -48,7 +48,7 @@ func NewGatewayPod(k8sClient kubernetes.Interface) (*GatewayPod, error) {
 		name:      os.Getenv("POD_NAME"),
 		clientset: k8sClient,
 	}
-
+	klog.Info("POD_NAME :" + gp.name)
 	if gp.namespace == "" {
 		return nil, errors.New("SUBMARINER_NAMESPACE environment variable missing")
 	}

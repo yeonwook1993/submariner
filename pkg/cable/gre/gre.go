@@ -27,20 +27,26 @@ func init() {
 }
 
 type gre struct {
-	localEndpoint types.SubmarinerEndpoint
-	connections   []v1.Connection
-	localIP       string
-	remoteIP      string
-	mutex         sync.Mutex
-	tunnelIP      []string
+	localEndpoint  types.SubmarinerEndpoint
+	connections    []v1.Connection
+	localIP        string
+	remoteIP       string
+	mutex          sync.Mutex
+	localTunnelIP  string
+	remoteTunnelIP string
+	tunnelRouteIP  string
 }
 
 func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.SubmarinerCluster) (cable.Driver, error) {
-
+	tunnelIPs := []string{"192.168.1.1/24", "192.168.2.1/24"}
+	tunnelRoutes := []string{"192.168.1.0/24", "192.168.2.0/24"}
+	localTunnelIP, tunnelRouteIP, remoteTunnelIP := selectTunnelIP(tunnelIPs, tunnelRoutes, localEndpoint.Spec.PrivateIP)
 	g := gre{
-		localEndpoint: localEndpoint,
-		localIP:       localEndpoint.Spec.PrivateIP,
-		tunnelIP:      []string{"10.2.1.2/30", "10.2.1.1/30"},
+		localEndpoint:  localEndpoint,
+		localIP:        localEndpoint.Spec.PrivateIP,
+		localTunnelIP:  localTunnelIP,
+		remoteTunnelIP: remoteTunnelIP,
+		tunnelRouteIP:  tunnelRouteIP,
 	}
 	klog.V(log.DEBUG).Infof("set GRE: %s", DefaultDeviceName)
 	return &g, nil
@@ -71,15 +77,15 @@ func (g *gre) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	defer g.mutex.Unlock()
 
 	cable.RecordConnection(cableDriverName, &g.localEndpoint.Spec, &remoteEndpoint.Spec, string(v1.Connected), true)
-	localTunnelIP := selectTunnelIP(g.tunnelIP, g.localIP)
-	err := g.createGRE(g.localIP, g.remoteIP, localTunnelIP)
+
+	err := g.createGRE(g.localIP, g.remoteIP, g.remoteTunnelIP, g.tunnelRouteIP)
 	if err != nil {
 		return "", fmt.Errorf("Error to create gre : %v", err)
 	}
 	g.connections = append(g.connections, v1.Connection{Endpoint: remoteEndpoint.Spec, Status: v1.Connected,
 		UsingIP: endpointInfo.UseIP, UsingNAT: endpointInfo.UseNAT})
 
-	return endpointInfo.UseIP, nil
+	return g.remoteTunnelIP, nil
 }
 
 func (g *gre) DisconnectFromEndpoint(endpoint types.SubmarinerEndpoint) error {
@@ -112,7 +118,7 @@ func removeConnectionForEndpoint(connections []v1.Connection, endpoint types.Sub
 	return connections
 }
 
-func (g *gre) createGRE(localIP string, remoteIP string, tunnelIP string) error {
+func (g *gre) createGRE(localIP string, remoteIP string, tunnelIP string, routeIP string) error {
 	if err := g.setTunnel(localIP, remoteIP); err != nil {
 		return err
 	}
@@ -122,8 +128,12 @@ func (g *gre) createGRE(localIP string, remoteIP string, tunnelIP string) error 
 	if err := g.linkTunnel(tunnelIP); err != nil {
 		return err
 	}
+	if err := g.routeTunnel(routeIP); err != nil {
+		return err
+	}
 	return nil
 }
+
 func ipCommand(lookPath string, command []string) error {
 	binary, err := exec.LookPath(lookPath)
 	if err != nil {
@@ -156,7 +166,14 @@ func (g *gre) deviceUp() error {
 }
 
 func (g *gre) linkTunnel(tunnelIP string) error {
-	err := ipCommand("ip", []string{"ip", "addr", "add", tunnelIP, DefaultDeviceName})
+	err := ipCommand("ip", []string{"ip", "addr", "add", tunnelIP, "dev", DefaultDeviceName})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func (g *gre) routeTunnel(tunnelIP string) error {
+	err := ipCommand("ip", []string{"ip", "route", "add", tunnelIP, "dev", DefaultDeviceName})
 	if err != nil {
 		return err
 	}
@@ -171,44 +188,12 @@ func deleteTunnel() error {
 	return nil
 }
 
-func initIPtables(remoteIP string) error {
-	err := ipCommand("iptables", []string{"iptables", "-A", "INPUT", "-p", "gre", "-s", remoteIP, "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	err = ipCommand("iptables", []string{"iptables", "-A", "INPUT", "-i", "submariner", "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	ipCommand("iptables", []string{"iptables", "-A", "INPUT", "-o", "submariner", "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func deleteIPtables(remoteIP string) error {
-	err := ipCommand("iptables", []string{"iptables", "-D", "INPUT", "-p", "gre", "-s", remoteIP, "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	err = ipCommand("iptables", []string{"iptables", "-D", "INPUT", "-i", "submariner", "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	err = ipCommand("iptables", []string{"iptables", "-D", "INPUT", "-o", "submariner", "-j", "ACCEPT"})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func selectTunnelIP(tunnelIP []string, localIP string) string {
+func selectTunnelIP(tunnelIP []string, tunnelRouteIP []string, localIP string) (string, string, string) {
 	slice := strings.Split(localIP, ".")
 	num, _ := strconv.Atoi(slice[3])
 	if (num % 2) == 0 {
-		return tunnelIP[0]
+		return tunnelIP[0], tunnelRouteIP[1], tunnelIP[1]
 	} else {
-		return tunnelIP[1]
+		return tunnelIP[1], tunnelRouteIP[0], tunnelIP[0]
 	}
 }
