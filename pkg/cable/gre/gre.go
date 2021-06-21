@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/submariner-io/admiral/pkg/log"
 	v1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
@@ -19,7 +18,7 @@ import (
 
 const (
 	cableDriverName   = "gre"
-	DefaultDeviceName = "submariner"
+	DefaultDeviceName = "gre-submariner"
 )
 
 func init() {
@@ -67,30 +66,37 @@ func (g *gre) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	}
 
 	remoteIP := endpointInfo.UseIP
+	g.remoteIP = remoteIP
 	if remoteIP == "" {
 		return "", fmt.Errorf("failed to parse remote IP %s", endpointInfo.UseIP)
 	}
 
 	klog.V(log.DEBUG).Infof("Connecting cluster %s endpoint %s", remoteEndpoint.Spec.ClusterID, remoteIP)
 
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-
 	cable.RecordConnection(cableDriverName, &g.localEndpoint.Spec, &remoteEndpoint.Spec, string(v1.Connected), true)
 
-	err := g.createGRE(g.localIP, g.remoteIP, g.remoteTunnelIP, g.tunnelRouteIP)
+	if checkExistDevice() {
+		startScript("del-gre.sh")
+	}
+	checkExistFile("run-gre.sh")
+	checkExistFile("del-gre.sh")
+
+	err := g.makeGREfile(g.localIP, g.remoteIP, g.tunnelRouteIP, g.remoteTunnelIP)
+	startScript("run-gre.sh")
+
 	if err != nil {
-		return "", fmt.Errorf("Error to create gre : %v", err)
+		klog.V(log.DEBUG).Infof("Err Create gre : %v", err)
+		return "", err
 	}
 	g.connections = append(g.connections, v1.Connection{Endpoint: remoteEndpoint.Spec, Status: v1.Connected,
 		UsingIP: endpointInfo.UseIP, UsingNAT: endpointInfo.UseNAT})
 
-	return g.remoteTunnelIP, nil
+	return endpointInfo.UseIP, nil
 }
 
 func (g *gre) DisconnectFromEndpoint(endpoint types.SubmarinerEndpoint) error {
 	klog.V(log.DEBUG).Infof("Removing endpoint %#v", endpoint)
-	deleteTunnel()
+	startScript("del-gre.sh")
 	g.connections = removeConnectionForEndpoint(g.connections, endpoint)
 	cable.RecordDisconnected(cableDriverName, &g.localEndpoint.Spec, &endpoint.Spec)
 	return nil
@@ -117,72 +123,55 @@ func removeConnectionForEndpoint(connections []v1.Connection, endpoint types.Sub
 
 	return connections
 }
+func (g *gre) makeGREfile(localIP string, remoteIP string, routeIP string, tunnelIP string) error {
+	f1, err := os.Create("run-gre.sh")
+	defer f1.Close()
+	if err != nil {
+		klog.V(log.DEBUG).Infof("err make run-gre.sh : %v", err)
+		return err
+	}
+	fmt.Fprintf(f1, "ip tunnel add "+DefaultDeviceName+" mode gre local "+localIP+" remote "+remoteIP+" ttl 255\n")
+	fmt.Fprintf(f1, "ip link set "+DefaultDeviceName+" up\n")
+	fmt.Fprintf(f1, "ip route add "+routeIP+" dev "+DefaultDeviceName+"\n")
+	fmt.Fprintf(f1, "ip addr add "+tunnelIP+" dev "+DefaultDeviceName+"\n")
 
-func (g *gre) createGRE(localIP string, remoteIP string, tunnelIP string, routeIP string) error {
-	if err := g.setTunnel(localIP, remoteIP); err != nil {
+	f2, err := os.Create("./del-gre.sh")
+	defer f2.Close()
+	if err != nil {
+		klog.V(log.DEBUG).Infof("err make del-gre.sh : %v", err)
 		return err
 	}
-	if err := g.deviceUp(); err != nil {
-		return err
+	fmt.Fprintf(f2, "ip tunnel del "+DefaultDeviceName+"\n")
+	return nil
+}
+
+func checkExistDevice() bool {
+	cmd := "ip link | grep " + DefaultDeviceName
+	out, _ := exec.Command("bash", "-c", cmd).Output()
+	if string(out) != "" {
+		return true
+	} else {
+		return false
 	}
-	if err := g.linkTunnel(tunnelIP); err != nil {
-		return err
-	}
-	if err := g.routeTunnel(routeIP); err != nil {
-		return err
+}
+
+func checkExistFile(filename string) error {
+	_, err := os.Stat(filename)
+	if err == nil {
+		err = os.Remove(filename)
+		if err != nil {
+			klog.V(log.DEBUG).Infof("err remove %s File... : %v", filename, err)
+			return err
+		}
 	}
 	return nil
 }
 
-func ipCommand(lookPath string, command []string) error {
-	binary, err := exec.LookPath(lookPath)
+func startScript(filename string) error {
+	cmd := exec.Command("sh", filename)
+	err := cmd.Run()
 	if err != nil {
-		klog.V(log.DEBUG).Infof("Error lookpath loaded... : %v", err)
-		return err
-	}
-	env := os.Environ()
-	err = syscall.Exec(binary, command, env)
-	if err != nil {
-		klog.V(log.DEBUG).Infof("Err exec lookpath... : %v", err)
-		return err
-	}
-	return nil
-}
-
-func (g *gre) setTunnel(localIP string, remoteIP string) error {
-	err := ipCommand("ip", []string{"ip", "tunnel", "add", DefaultDeviceName, "gre", "local", localIP, "remote", remoteIP, "ttl 255"})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (g *gre) deviceUp() error {
-	err := ipCommand("ip", []string{"ip", "set", DefaultDeviceName, "up"})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (g *gre) linkTunnel(tunnelIP string) error {
-	err := ipCommand("ip", []string{"ip", "addr", "add", tunnelIP, "dev", DefaultDeviceName})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-func (g *gre) routeTunnel(tunnelIP string) error {
-	err := ipCommand("ip", []string{"ip", "route", "add", tunnelIP, "dev", DefaultDeviceName})
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func deleteTunnel() error {
-	err := ipCommand("ip", []string{"ip", "del", "tunnel", DefaultDeviceName})
-	if err != nil {
+		klog.V(log.DEBUG).Infof("err start %s File... : %v", filename, err)
 		return err
 	}
 	return nil
