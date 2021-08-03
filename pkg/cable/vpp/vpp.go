@@ -20,6 +20,7 @@ package vpp
 
 import (
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,7 +37,9 @@ const (
 	// DefaultDeviceName specifies name of WireGuard network device
 	DefaultDeviceName    = "submariner"
 	CableDriverName      = "vpp"
-	VppIface             = "vpp-int"
+	HostIntName          = "vpp-host"
+	VppIntName           = "vpp-out"
+	VPPCidr              = 24
 	VPPVTepNetworkPrefix = 240
 )
 
@@ -61,13 +64,9 @@ type vppIface struct {
 	vtepIPCidr  string
 }
 
-func (v *vpp) Init() error {
-	cable.AddDriver(CableDriverName, NewDriver)
-}
-
 // NewDriver creates a new VPP driver
 func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.SubmarinerCluster) (cable.Driver, error) {
-	// create new Endpoint IP & vtepip
+	// create new Endpoint IP & vtepIP
 	v := vpp{
 		localEndpoint: localEndpoint,
 		localCluster:  localCluster,
@@ -79,35 +78,94 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 }
 
 func (v *vpp) createVPPInterface() error {
+	//make args... like hostname, vtepIP, gatewayIP ...
 	ip := v.localEndpoint.Spec.PrivateIP
 	vtepIP, err := v.createVPPVtepIP(ip)
 	if err != nil {
 		return fmt.Errorf("failed to create vtepIP for %v", ip, err)
 	}
+	hostname, vppname, err := v.createInterfaceName()
+	if err != nil {
+		return fmt.Errorf("error in createInterface: %v", err)
+	}
+	gateway,err := createCidr(vtepIP,"gateway",VPPCidr)
+	if err != nil {
+		return fmt.Errorf("error in create VPP-Gateway IP Cidr: %v",err)
+	}
+
+	//create VPP interface && exec script
+	v.vppIface = vppIface{
+		newEndpoint: ,
+		vtevtepIP: ,
+		vtepIPCidr ,
+	}
+
+
+	return nil
 }
 
-//create VPP ipsec IP addr
-func (v *vpp) createVPPVtepIP(ipAddr string) (string, error) {
-	ipSlice := strings.Split(ipAddr, ".")
+// startScript using create VPP Tunnel
+func startScript(args ...string) error {
+	cmd := exec.Command("sh", args...)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("error start script: %v", err)
+	}
+	return nil
+}
+// create new Endpoint IP
+func (v *vpp) grepEndpointIP()(){
+	
+}
+// create veth Interface used in VPP
+func (v *vpp) createInterfaceName() (string, string, error) {
+	connect := len(v.connections)
+	hostIntName := HostIntName + strconv.Itoa(connect)
+	vppIntName := VppIntName + strconv.Itoa(connect)
+	if hostIntName == "" {
+		return "", "", fmt.Errorf("failed to create veth_Interface")
+	}
+	if vppIntName == "" {
+		return "", "", fmt.Errorf("failed to create veth_Interface")
+	}
+	return hostIntName, VppIntName, nil
+}
+
+//create VPPVtepIP ex) 10.x.x.x -> 240.x.x.2~255
+func (v *vpp) createVPPVtepIP(ip string) (string, error) {
+	ipSlice := strings.Split(ip, ".")
 	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("invalid ipAddr [%s]", ipAddr)
+		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
 	}
 
 	ipSlice[0] = strconv.Itoa(VPPVTepNetworkPrefix)
+	ipSlice[3] = strconv.Itoa(2 + len(v.connections))
 	vppIP := strings.Join(ipSlice, ".")
 
 	return vppIP, nil
 }
 
-//transfer ip to cidr
-func (v *vpp) makeCidr(ipAddr string, cidr string) (string, error) {
-	ipSlice := strings.Split(ipAddr, ".")
-	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("in valid ip Addr [%s]", ipAddr)
+// create cidr used for routing or gateway   ex) route: x.x.x.x/cidr -> x.x.x.0/cidr , gateway: x.x.x.x/cidr -> x.x.x.1/cidr
+func createCidr(ip string, kind string, cidr string) (string, error) {
+	switch {
+	case "route" == kind:
+		ipSlice := strings.Split(ip, ".")
+		if len(ipSlice) < 4 {
+			return "", fmt.Errorf("invalid ipAddr [%s]", ip)
+		}
+		ipSlice[3] = "0/" + cidr
+		routeCidr := strings.Join(ipSlice, ".")
+		return routeCidr, nil
+	case "gateway" == kind:
+		ipSlice := strings.Split(ip, ".")
+		if len(ipSlice) < 4 {
+			return "", fmt.Errorf("invalid ipAddr [%s]", ip)
+		}
+		ipSlice[3] = "1/" + cidr
+		gatewayCidr := strings.Join(ipSlice, ".")
+		return gatewayCidr, nil
+	default:
+		return "", fmt.Errorf("invalid Cidr kind [%s]", kind)
 	}
-	ipSlice[3] = "0"
-	ipCidr := strings.Join(ipSlice, ".") + "/" + cidr
-	return ipCidr, nil
 }
 
 //////////////////////////
@@ -121,7 +179,7 @@ func (v *vpp) makeCidr(ipAddr string, cidr string) (string, error) {
 //////////////////////////
 //////////////////////////
 func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (string, error) {
-
+	return "", nil
 }
 
 //////////////////////////
