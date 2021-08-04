@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,6 +132,14 @@ func main() {
 
 	if err != nil {
 		klog.Fatalf("Error creating local endpoint object from %#v: %v", submSpec, err)
+	}
+
+	// temporary select VPP IP
+	if submSpec.CableDriver == "vpp" {
+		localEndpoint.Spec.VppIP, err = createVPPVtepIP(localEndpoint.Spec.PrivateIP)
+		if err != nil {
+			klog.Fatalf("Error create VPP host IP : %s", err)
+		}
 	}
 
 	cableEngine := cableengine.NewEngine(localCluster, localEndpoint)
@@ -281,6 +290,17 @@ func submarinerClusterFrom(submSpec *types.SubmarinerSpecification) types.Submar
 			GlobalCIDR:  submSpec.GlobalCidr,
 		},
 	}
+}
+func createVPPVtepIP(ip string) (string, error) {
+	ipSlice := strings.Split(ip, ".")
+	if len(ipSlice) < 4 {
+		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
+	}
+
+	ipSlice[2] = strconv.Itoa(251)
+	vppIP := strings.Join(ipSlice, ".")
+
+	return vppIP, nil
 }
 
 func startHTTPServer() *http.Server {

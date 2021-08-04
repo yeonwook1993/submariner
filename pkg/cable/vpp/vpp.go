@@ -39,7 +39,7 @@ const (
 	CableDriverName      = "vpp"
 	HostIntName          = "vpp-host"
 	VppIntName           = "vpp-out"
-	VPPCidr              = 24
+	VPPCidr              = "24"
 	VPPVTepNetworkPrefix = 240
 )
 
@@ -71,36 +71,40 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 		localEndpoint: localEndpoint,
 		localCluster:  localCluster,
 	}
-	if err := v.createVPPInterface(); err != nil {
+
+	if err := v.createVPPInterface(localEndpoint); err != nil {
 		return nil, fmt.Errorf("failed to setup VPP link: %v", err)
 	}
 	return &v, nil
 }
 
-func (v *vpp) createVPPInterface() error {
+func (v *vpp) createVPPInterface(localEndpoint types.SubmarinerEndpoint) error {
 	//make args... like hostname, vtepIP, gatewayIP ...
 	ip := v.localEndpoint.Spec.PrivateIP
 	vtepIP, err := v.createVPPVtepIP(ip)
 	if err != nil {
-		return fmt.Errorf("failed to create vtepIP for %v", ip, err)
+		return fmt.Errorf("failed to create vtepIP: %v", err)
 	}
 	hostname, vppname, err := v.createInterfaceName()
 	if err != nil {
 		return fmt.Errorf("error in createInterface: %v", err)
 	}
-	gateway,err := createCidr(vtepIP,"gateway",VPPCidr)
+	gateway, err := createCidr(vtepIP, "gateway", VPPCidr)
 	if err != nil {
-		return fmt.Errorf("error in create VPP-Gateway IP Cidr: %v",err)
+		return fmt.Errorf("error in create VPP-Gateway IP Cidr: %v", err)
 	}
 
 	//create VPP interface && exec script
-	v.vppIface = vppIface{
-		newEndpoint: ,
-		vtevtepIP: ,
-		vtepIPCidr ,
+	v.vppIface = &vppIface{
+		newEndpoint: localEndpoint.Spec.VppIP,
+		vtepIP:      vtepIP,
+		vtepIPCidr:  VPPCidr,
 	}
 
-
+	err = startScript("createTunnel.sh", hostname, vppname, vtepIP, gateway, localEndpoint.Spec.PrivateIP)
+	if err != nil {
+		return fmt.Errorf("Error in start script: %v", err)
+	}
 	return nil
 }
 
@@ -112,10 +116,7 @@ func startScript(args ...string) error {
 	}
 	return nil
 }
-// create new Endpoint IP
-func (v *vpp) grepEndpointIP()(){
-	
-}
+
 // create veth Interface used in VPP
 func (v *vpp) createInterfaceName() (string, string, error) {
 	connect := len(v.connections)
@@ -166,6 +167,9 @@ func createCidr(ip string, kind string, cidr string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid Cidr kind [%s]", kind)
 	}
+}
+func (v *vpp) Init() error {
+	return nil
 }
 
 //////////////////////////

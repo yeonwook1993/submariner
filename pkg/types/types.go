@@ -46,6 +46,7 @@ type SubmarinerSpecification struct {
 	HealthCheckEnabled            bool `default:"true"`
 	HealthCheckInterval           uint
 	HealthCheckMaxPacketLossCount uint
+	VppIP                         string
 }
 
 type Secure struct {
