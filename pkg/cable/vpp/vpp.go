@@ -21,7 +21,6 @@ package vpp
 import (
 	"fmt"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -60,7 +59,8 @@ type vpp struct {
 
 type vppIface struct {
 	newEndpoint string
-	vtepIP      string
+	hostIntIP   string
+	vppIntIP    string
 	vtepIPCidr  string
 }
 
@@ -81,27 +81,20 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 func (v *vpp) createVPPInterface(localEndpoint types.SubmarinerEndpoint) error {
 	//make args... like hostname, vtepIP, gatewayIP ...
 	ip := v.localEndpoint.Spec.PrivateIP
-	vtepIP, err := v.createVPPVtepIP(ip)
+	hostIntIp, vppIntIp, err := v.createVPPVtepIP(ip)
 	if err != nil {
 		return fmt.Errorf("failed to create vtepIP: %v", err)
-	}
-	hostname, vppname, err := v.createInterfaceName()
-	if err != nil {
-		return fmt.Errorf("error in createInterface: %v", err)
-	}
-	gateway, err := createCidr(vtepIP, "gateway", VPPCidr)
-	if err != nil {
-		return fmt.Errorf("error in create VPP-Gateway IP Cidr: %v", err)
 	}
 
 	//create VPP interface && exec script
 	v.vppIface = &vppIface{
 		newEndpoint: localEndpoint.Spec.VppIP,
-		vtepIP:      vtepIP,
 		vtepIPCidr:  VPPCidr,
+		hostIntIP:   hostIntIp,
+		vppIntIP:    vppIntIp,
 	}
-
-	err = startScript("createTunnel.sh", hostname, vppname, vtepIP, gateway, localEndpoint.Spec.PrivateIP)
+	klog.V(log.DEBUG).Infof("start script name : %s, hostname: %s, vppname: %s, vtepIP: %s, gateway: %s, EnpointIp: %s", "createTunnel.sh")
+	err = startScript("createTunnel.sh")
 	if err != nil {
 		return fmt.Errorf("Error in start script: %v", err)
 	}
@@ -117,37 +110,15 @@ func startScript(args ...string) error {
 	return nil
 }
 
-// create veth Interface used in VPP
-func (v *vpp) createInterfaceName() (string, string, error) {
-	connect := len(v.connections)
-	hostIntName := HostIntName + strconv.Itoa(connect)
-	vppIntName := VppIntName + strconv.Itoa(connect)
-	if hostIntName == "" {
-		return "", "", fmt.Errorf("failed to create veth_Interface")
-	}
-	if vppIntName == "" {
-		return "", "", fmt.Errorf("failed to create veth_Interface")
-	}
-	return hostIntName, VppIntName, nil
+//create VPPVtepIP VPPhostIP -> x1.x2.x3.x4/x -> vpp: 240.x4.0.1/24         host: 240.x4.0.2/24
+func (v *vpp) createVPPVtepIP(ip string) (string, string, error) {
+	return "", "", nil
 }
 
-//create VPPVtepIP ex) 10.x.x.x -> 240.x.x.2~255
-func (v *vpp) createVPPVtepIP(ip string) (string, error) {
-	ipSlice := strings.Split(ip, ".")
-	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
-	}
-
-	ipSlice[0] = strconv.Itoa(VPPVTepNetworkPrefix)
-	ipSlice[3] = strconv.Itoa(2 + len(v.connections))
-	vppIP := strings.Join(ipSlice, ".")
-
-	return vppIP, nil
-}
-
-// create cidr used for routing or gateway   ex) route: x.x.x.x/cidr -> x.x.x.0/cidr , gateway: x.x.x.x/cidr -> x.x.x.1/cidr
+// create cidr ex) default : x.x.x.x -> x.x.x.0/cidr    route : x.x.x.x -> x.x.x.x/cidr
 func createCidr(ip string, kind string, cidr string) (string, error) {
 	switch {
+	//create x.x.x.0/x
 	case "route" == kind:
 		ipSlice := strings.Split(ip, ".")
 		if len(ipSlice) < 4 {
@@ -156,18 +127,21 @@ func createCidr(ip string, kind string, cidr string) (string, error) {
 		ipSlice[3] = "0/" + cidr
 		routeCidr := strings.Join(ipSlice, ".")
 		return routeCidr, nil
-	case "gateway" == kind:
+	//create x.x.x.x/x   -> use in vpp ip setting.
+	case "vpp" == kind:
 		ipSlice := strings.Split(ip, ".")
 		if len(ipSlice) < 4 {
 			return "", fmt.Errorf("invalid ipAddr [%s]", ip)
 		}
-		ipSlice[3] = "1/" + cidr
-		gatewayCidr := strings.Join(ipSlice, ".")
-		return gatewayCidr, nil
+		ipSlice[3] = ipSlice[3] + "/"
+		ipSlice[3] = ipSlice[3] + cidr
+		vppCidr := strings.Join(ipSlice, ".")
+		return vppCidr, nil
 	default:
-		return "", fmt.Errorf("invalid Cidr kind [%s]", kind)
+		return "", fmt.Errorf("invalid input Cidr Kind [%s]", kind)
 	}
 }
+
 func (v *vpp) Init() error {
 	return nil
 }
