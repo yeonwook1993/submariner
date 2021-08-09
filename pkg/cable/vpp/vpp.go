@@ -21,6 +21,7 @@ package vpp
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -61,7 +62,7 @@ type vppIface struct {
 	newEndpoint string
 	hostIntIP   string
 	vppIntIP    string
-	vtepIPCidr  string
+	vtepRouteIp string
 }
 
 // NewDriver creates a new VPP driver
@@ -85,16 +86,22 @@ func (v *vpp) createVPPInterface(localEndpoint types.SubmarinerEndpoint) error {
 	if err != nil {
 		return fmt.Errorf("failed to create vtepIP: %v", err)
 	}
-
+	vtepRouteCidr, err := createCidr(hostIntIp, "route", VPPCidr)
+	if err != nil {
+		return fmt.Errorf("failed to create routeCidr: %v", err)
+	}
 	//create VPP interface && exec script
 	v.vppIface = &vppIface{
 		newEndpoint: localEndpoint.Spec.VppIP,
-		vtepIPCidr:  VPPCidr,
+		vtepRouteIp: vtepRouteCidr,
 		hostIntIP:   hostIntIp,
 		vppIntIP:    vppIntIp,
 	}
-	klog.V(log.DEBUG).Infof("start script name : %s, hostname: %s, vppname: %s, vtepIP: %s, gateway: %s, EnpointIp: %s", "createTunnel.sh")
-	err = startScript("createTunnel.sh")
+	vppIntCidr, _ := createCidr(vppIntIp, "vpp", VPPCidr)
+	hostIntCidr, _ := createCidr(hostIntIp, "vpp", VPPCidr)
+	klog.V(log.DEBUG).Infof("start script name : %s, hostname: %s, vppname: %s, hostIP: %s, vppIP: %s, localEndpoint: %s", "createTunnel.sh", HostIntName, VppIntName, hostIntCidr, vppIntCidr, ip)
+
+	err = startScript("createTunnel.sh", HostIntName, VppIntName, hostIntCidr, vppIntCidr, ip)
 	if err != nil {
 		return fmt.Errorf("Error in start script: %v", err)
 	}
@@ -110,9 +117,20 @@ func startScript(args ...string) error {
 	return nil
 }
 
-//create VPPVtepIP VPPhostIP -> x1.x2.x3.x4/x -> vpp: 240.x4.0.1/24         host: 240.x4.0.2/24
+//create VPPVtepIP VPPhostIP -> x0.x1.x2.x3/x -> vpp: 240.x1.x3.1/24         host: x0.x1.x2.x3/x -> vpp: 240.x1.x3.2/24  : it`s temporary
 func (v *vpp) createVPPVtepIP(ip string) (string, string, error) {
-	return "", "", nil
+	ipSlice := strings.Split(ip, ".")
+	if len(ipSlice) < 4 {
+		return "", "", fmt.Errorf("invalid ipAddr [%s]", ip)
+	}
+
+	ipSlice[0] = strconv.Itoa(VPPVTepNetworkPrefix)
+	ipSlice[2] = ipSlice[3]
+	ipSlice[3] = "1"
+	vppIP := strings.Join(ipSlice, ".")
+	ipSlice[3] = "2"
+	hostIP := strings.Join(ipSlice, ".")
+	return vppIP, hostIP, nil
 }
 
 // create cidr ex) default : x.x.x.x -> x.x.x.0/cidr    route : x.x.x.x -> x.x.x.x/cidr
@@ -146,17 +164,21 @@ func (v *vpp) Init() error {
 	return nil
 }
 
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
-//////////////////////////
+//Connect to remote cluster : route setting
 func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (string, error) {
+	remoteEndpoint := endpointInfo.Endpoint
+
+	if v.localEndpoint.Spec.ClusterID == remoteEndpoint.Spec.ClusterID {
+		klog.V(log.DEBUG).Infof("Will not connect to self")
+		return "", nil
+	}
+
+	v.mutex.Lock()
+	defer v.mutex.Unlock()
+	remoteVppIP := remoteEndpoint.Spec.VppIP
+	cable.RecordConnection(CableDriverName, &v.localEndpoint.Spec, &remoteEndpoint.Spec, string(v1.Connected), true)
+	//route remote cluster IP
+	startScript("route.sh")
 	return "", nil
 }
 

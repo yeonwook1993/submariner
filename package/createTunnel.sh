@@ -1,11 +1,11 @@
-hostname=$1
-vppname=$2
-vppIP=$3
-gatewayIP=$4
+hostIntName=$1
+vppIntName=$2
+hostIntCidr=$3
+vppIntCidr=$4
 endpointIP=$5
 
-ip link add name $vppname type veth peer name $hostname
-ip link set dev $vppname up
-ip link set dev $hostname up
-ip addr add dev $hostname vppIP
-sshpass -p1234 ssh vppuser@$endpointIP sh start-vpp.sh $vppname $vppIP $gatewayIP
+sudo ip link add name $hostIntName type veth peer name $vppIntName
+sudo ip link set dev $hostIntName up
+sudo ip link set dev $vppIntName up
+sudo ip addr add $hostIntCidr dev $hostIntName
+sshpass -p1234 ssh vppuser@$endpointIP -o StrictHostKeyChecking=no sh start-vpp.sh $vppIntName $vppIntCidr

@@ -288,7 +288,8 @@ func whack(args ...string) error {
 // representation of the IP address of the target endpoint.
 func (i *libreswan) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (string, error) {
 	endpoint := &endpointInfo.Endpoint
-
+	remoteEndpoint := endpointInfo.Endpoint
+	klog.V(log.DEBUG).Infof("Connecting cluster %s endpoint %s, subnet :%s", endpointInfo.Endpoint.Spec.ClusterID, endpointInfo.UseIP, remoteEndpoint.Spec.Subnets)
 	rightNATTPort, err := endpoint.Spec.GetBackendPort(subv1.UDPPortConfig, i.defaultNATTPort)
 	if err != nil {
 		klog.Warningf("Error parsing %q from remote endpoint %q - using port %d instead: %v", subv1.UDPPortConfig,
@@ -331,7 +332,12 @@ func (i *libreswan) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo
 	i.connections = append(i.connections,
 		subv1.Connection{Endpoint: endpoint.Spec, Status: subv1.Connected, UsingIP: endpointInfo.UseIP, UsingNAT: endpointInfo.UseNAT})
 	cable.RecordConnection(cableDriverName, &i.localEndpoint.Spec, &endpoint.Spec, string(subv1.Connected), true)
-
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
+	klog.V(log.DEBUG).Infof("----------------------------use ip = %s ----------------------------------------------", endpointInfo.UseIP)
 	return endpointInfo.UseIP, nil
 }
 
