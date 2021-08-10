@@ -35,7 +35,7 @@ import (
 
 const (
 	// DefaultDeviceName specifies name of WireGuard network device
-	DefaultDeviceName    = "submariner"
+	DefaultDeviceName    = "vpp-host"
 	CableDriverName      = "vpp"
 	HostIntName          = "vpp-host"
 	VppIntName           = "vpp-out"
@@ -90,16 +90,20 @@ func (v *vpp) createVPPInterface(localEndpoint types.SubmarinerEndpoint) error {
 	if err != nil {
 		return fmt.Errorf("failed to create routeCidr: %v", err)
 	}
+	//set up vpp IP in cluster Struct
+	v.localEndpoint.Spec.VppIP = vppIntIp
+	v.localEndpoint.Spec.VppHostIP = hostIntIp
 	//create VPP interface && exec script
 	v.vppIface = &vppIface{
-		newEndpoint: localEndpoint.Spec.VppIP,
+		newEndpoint: localEndpoint.Spec.VppEndpointIP,
 		vtepRouteIp: vtepRouteCidr,
 		hostIntIP:   hostIntIp,
 		vppIntIP:    vppIntIp,
 	}
+	klog.V(log.DEBUG).Infof("new Endpoint : %s, vtepRouteIP : %s, host ip : %s, vpp ip : %s")
 	vppIntCidr, _ := createCidr(vppIntIp, "vpp", VPPCidr)
 	hostIntCidr, _ := createCidr(hostIntIp, "vpp", VPPCidr)
-	klog.V(log.DEBUG).Infof("start script name : %s, hostname: %s, vppname: %s, hostIP: %s, vppIP: %s, localEndpoint: %s", "createTunnel.sh", HostIntName, VppIntName, hostIntCidr, vppIntCidr, ip)
+	klog.V(log.DEBUG).Infof("start script name : %s, hostname: %s, vppname: %s, hostIP: %s, VppEndpointIP: %s, localEndpoint: %s", "createTunnel.sh", HostIntName, VppIntName, hostIntCidr, vppIntCidr, ip)
 
 	err = startScript("createTunnel.sh", HostIntName, VppIntName, hostIntCidr, vppIntCidr, ip)
 	if err != nil {
@@ -127,10 +131,10 @@ func (v *vpp) createVPPVtepIP(ip string) (string, string, error) {
 	ipSlice[0] = strconv.Itoa(VPPVTepNetworkPrefix)
 	ipSlice[2] = ipSlice[3]
 	ipSlice[3] = "1"
-	vppIP := strings.Join(ipSlice, ".")
+	VppEndpointIP := strings.Join(ipSlice, ".")
 	ipSlice[3] = "2"
 	hostIP := strings.Join(ipSlice, ".")
-	return vppIP, hostIP, nil
+	return VppEndpointIP, hostIP, nil
 }
 
 // create cidr ex) default : x.x.x.x -> x.x.x.0/cidr    route : x.x.x.x -> x.x.x.x/cidr
@@ -165,21 +169,25 @@ func (v *vpp) Init() error {
 }
 
 //Connect to remote cluster : route setting
+//따로 endpoint, vppIp,hostIP를 담는 struct 만들기
 func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (string, error) {
-	remoteEndpoint := endpointInfo.Endpoint
-
-	if v.localEndpoint.Spec.ClusterID == remoteEndpoint.Spec.ClusterID {
-		klog.V(log.DEBUG).Infof("Will not connect to self")
-		return "", nil
+	localVppEndpointIP := v.localEndpoint.Spec.VppEndpointIP
+	localVppIP := v.localEndpoint.Spec.VppIP
+	localHostIP := v.localEndpoint.Spec.VppHostIP
+	remoteVppEndpointIP := endpointInfo.Endpoint.Spec.VppEndpointIP
+	remoteVppIP := endpointInfo.Endpoint.Spec.VppIP
+	remoteHostIP := endpointInfo.Endpoint.Spec.VppHostIP
+	remoteRouteIP, err := createCidr(remoteVppIP, "route", VPPCidr)
+	if err != nil {
+		return "", fmt.Errorf("Error create route IP %v", err)
 	}
 
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
-	remoteVppIP := remoteEndpoint.Spec.VppIP
-	cable.RecordConnection(CableDriverName, &v.localEndpoint.Spec, &remoteEndpoint.Spec, string(v1.Connected), true)
-	//route remote cluster IP
-	startScript("route.sh")
-	return "", nil
+	err = startScript("route.sh", remoteRouteIP, localVppEndpointIP, localVppIP, localHostIP, remoteVppEndpointIP, remoteVppIP, remoteHostIP, endpointInfo.Endpoint.Spec.PrivateIP)
+	if err != nil {
+		return "", fmt.Errorf("Error in start route script: %v", err)
+	}
+
+	return v.vppIface.hostIntIP, nil
 }
 
 //////////////////////////

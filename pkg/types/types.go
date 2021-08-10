@@ -46,6 +46,8 @@ type SubmarinerSpecification struct {
 	HealthCheckEnabled            bool `default:"true"`
 	HealthCheckInterval           uint
 	HealthCheckMaxPacketLossCount uint
+	VppEndpointIP                 string
+	VppHostIP                     string
 	VppIP                         string
 }
 
