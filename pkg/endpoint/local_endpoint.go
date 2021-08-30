@@ -1,14 +1,10 @@
 /*
 SPDX-License-Identifier: Apache-2.0
-
 Copyright Contributors to the Submariner project.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -52,7 +48,7 @@ func GetLocal(submSpec types.SubmarinerSpecification, k8sClient kubernetes.Inter
 	}
 
 	var localSubnets []string
-
+	var VppEndpointIP, VppHostIP, VppIP string
 	globalnetEnabled := false
 
 	if len(submSpec.GlobalCidr) > 0 {
@@ -67,7 +63,18 @@ func GetLocal(submSpec types.SubmarinerSpecification, k8sClient kubernetes.Inter
 	if err != nil {
 		return types.SubmarinerEndpoint{}, err
 	}
-
+	// temporary select VPP IP
+	if submSpec.CableDriver == "vpp" {
+		VppEndpointIP, err = createVPPEndpoint(privateIP)
+		if err != nil {
+			klog.Fatalf("Error create VPP host IP : %s", err)
+		}
+		VppHostIP, VppIP, err = createVppIP(privateIP)
+		if err != nil {
+			klog.Fatalf("Error create VPP IP & VPP HOST IP for %s : %v", privateIP, err)
+		}
+	}
+	klog.Infof("VPP IP, VPP host, VPP = %s, %s, %s", VppEndpointIP, VppHostIP, VppIP)
 	endpoint := types.SubmarinerEndpoint{
 		Spec: submv1.EndpointSpec{
 			CableName:     fmt.Sprintf("submariner-cable-%s-%s", submSpec.ClusterID, strings.ReplaceAll(privateIP, ".", "-")),
@@ -78,6 +85,9 @@ func GetLocal(submSpec types.SubmarinerSpecification, k8sClient kubernetes.Inter
 			Subnets:       localSubnets,
 			Backend:       submSpec.CableDriver,
 			BackendConfig: backendConfig,
+			VppEndpointIP: VppEndpointIP,
+			VppHostIP:     VppHostIP,
+			VppIP:         VppIP,
 		},
 	}
 
@@ -211,4 +221,31 @@ func getCNIInterfaceIPAddress(clusterCIDRs []string) (string, error) {
 	}
 
 	return "", fmt.Errorf("unable to find CNI Interface on the host which has IP from %q", clusterCIDRs)
+}
+
+//create vppIface
+func createVPPEndpoint(ip string) (string, error) {
+	ipSlice := strings.Split(ip, ".")
+	if len(ipSlice) < 4 {
+		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
+	}
+
+	ipSlice[2] = strconv.Itoa(100)
+	vppIP := strings.Join(ipSlice, ".")
+
+	return vppIP, nil
+}
+
+func createVppIP(ip string) (string, string, error) {
+	ipSlice := strings.Split(ip, ".")
+	if len(ipSlice) < 4 {
+		return "", "", fmt.Errorf("invalid ipAddr [%s]", ip)
+	}
+	ipSlice[0] = "140"
+	ipSlice[2] = ipSlice[3]
+	ipSlice[3] = "2"
+	hostIP := strings.Join(ipSlice, ".")
+	ipSlice[3] = "1"
+	vppIP := strings.Join(ipSlice, ".")
+	return hostIP, vppIP, nil
 }
