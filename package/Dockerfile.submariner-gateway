@@ -9,5 +9,5 @@ RUN dnf -y install --nodocs --setopt=install_weak_deps=0 \
            iproute libreswan sshpass openssh-server openssh-clients openssh-askpass&& \
     dnf -y clean all
 
-COPY package/submariner.sh package/pluto bin/${TARGETPLATFORM}/submariner-gateway /usr/local/bin/
+COPY package/createTunnel.sh package/submariner.sh package/routeTunnel.sh package/routeSubnet.sh package/pluto bin/${TARGETPLATFORM}/submariner-gateway /usr/local/bin/
 ENTRYPOINT submariner.sh
