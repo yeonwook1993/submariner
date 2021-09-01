@@ -7,10 +7,10 @@ _dst_ip=$3
 _gw_ip=$4
 _device_name=$5
 
-if [ "$_device_name" == "" ]
-then
-    _device_name="GigabitEthernet2/0/1"
-fi
+# if [ "$_device_name" == "" ]
+# then
+#     _device_name="GigabitEthernet2/0/1"
+# fi
 
 if [ "$_kind" == "local" ]
 then

@@ -64,7 +64,7 @@ func GetLocal(submSpec types.SubmarinerSpecification, k8sClient kubernetes.Inter
 		return types.SubmarinerEndpoint{}, err
 	}
 	// temporary select VPP IP
-	if submSpec.CableDriver == "vpp" {
+	if submSpec.CableDriver == "vpp" || submSpec.CableDriver == "vpp_wireguard" {
 		VppEndpointIP, err = createVPPEndpoint(privateIP)
 		if err != nil {
 			klog.Fatalf("Error create VPP host IP : %s", err)

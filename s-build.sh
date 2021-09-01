@@ -5,3 +5,4 @@ make  bin/linux/amd64/submariner-gateway package/.image.submariner-gateway
 
 docker tag quay.io/submariner/submariner-gateway:devel yeonwook1993/submariner-gateway:devel
 docker push yeonwook1993/submariner-gateway:devel
+chown -R classact /home/classact/vpp_wireguard/submariner
