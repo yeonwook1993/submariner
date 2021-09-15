@@ -1,4 +1,5 @@
 #!/bin/bash
+
 _endpoint=$1
 _public=$2
 _remote_vpp_endpoint=$3

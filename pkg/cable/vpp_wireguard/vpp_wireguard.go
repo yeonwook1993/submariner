@@ -175,7 +175,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 		return "", fmt.Errorf("Failed to Connection wireguard: %v", err)
 	}
 
-	//Create tun device  && Set up tun,wireguard device
+	//Create tap device  && Set up tap,wireguard device
 	err = v.scriptRun("wireguardSetLocal.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), v.ADDCidr(vppWireguardIP, "32"), DefaultDeviceName)
 	if err != nil {
 		return "", fmt.Errorf("Failed to Set local Device: %v", err)
