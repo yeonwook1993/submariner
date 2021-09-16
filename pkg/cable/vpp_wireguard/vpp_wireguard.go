@@ -108,8 +108,7 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 	//create vpp_wireguard link
 
 	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
-	//
-	klog.V(log.DEBUG).Infof("%s,%s,%s,%s,%s", "wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr)
+
 	if err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr); err != nil {
 		return nil, fmt.Errorf("error creating vpp wireguard interface: %v", err)
 	}
@@ -237,8 +236,8 @@ func createWireguardIP(ip string) (string, error) {
 //route rule
 func (v *vpp) AddRouteVPP(remoteSubnet, localSubnet []string) error {
 	for i := range localSubnet {
-		klog.V(log.DEBUG).Infof("%s,%s,%s,%s,%s", "routeSubnet.sh", "local", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
-		err := v.scriptRun("routeSubnet.sh", "local", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
+		klog.V(log.DEBUG).Infof("%s,%s,%s,%s,%s", "routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
+		err := v.scriptRun("routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
 		if err != nil {
 			return fmt.Errorf("Fail to local Route %v", err)
 		}
@@ -256,7 +255,6 @@ func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP strin
 	for i := range ipAddressList {
 		route := &netlink.Route{
 			LinkIndex: link.Attrs().Index,
-			Src:       ip,
 			Dst:       &ipAddressList[i],
 			Gw:        gwIP,
 			Type:      netlink.NDA_DST,
@@ -284,6 +282,7 @@ func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP strin
 	route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
 		Dst:       dst,
+		Src:       ip,
 		Gw:        gwIP,
 		Priority:  100,
 		Table:     TableID,
@@ -358,9 +357,9 @@ func (v *vpp) DelRoute(ipAddressList []net.IPNet) error {
 			Dst:       &ipAddressList[i],
 			Gw:        nil,
 			Type:      netlink.NDA_DST,
-			Flags:     netlink.NTF_SELF,
-			Priority:  100,
-			Table:     TableID,
+			// Flags:     netlink.NTF_SELF,
+			Priority: 100,
+			Table:    TableID,
 		}
 		err := netlink.RouteDel(route)
 		klog.V(log.DEBUG).Infof("DEL ROUTE...")
