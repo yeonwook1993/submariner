@@ -12,10 +12,11 @@ _EXIST=$(sshpass -p1234 ssh vppuser@$_endpoint -o StrictHostKeyChecking=no vppct
 if [ -n "$_EXIST" ]; then
     _PRIVATE=$(sshpass -p1234 ssh vppuser@$_endpoint -o StrictHostKeyChecking=no vppctl show wireguard interface | cut -d " " -f5 | cut -d ":" -f2)
     if [ "${_private}" = "${_PRIVATE}" ]; then
-        exit 100
+        exit 1
     else
         sshpass -p1234 ssh vppuser@$_endpoint -o StrictHostKeyChecking=no vppctl wireguard delete wg0
         sshpass -p1234 ssh vppuser@$_endpoint -o StrictHostKeyChecking=no vppctl wireguard create listen-port $_port private-key $_private src $_vpp_endpoint
+        exit 0
     fi
 
 else

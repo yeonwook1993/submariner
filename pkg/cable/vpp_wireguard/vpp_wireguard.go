@@ -49,6 +49,7 @@ const (
 	TableID            = 150
 	specEnvPrefix      = "ce_ipsec"
 	KeepAliveInterval  = "25"
+	VPPTunIndex        = "10"
 )
 
 func init() {
@@ -123,8 +124,16 @@ func (v *vpp) Init() error {
 func (v *vpp) scriptRun(args ...string) error {
 	cmd := exec.Command("sh", args...)
 	if err := cmd.Run(); err != nil {
-		// return fmt.Errorf("error start script: %v", err)
-		return nil
+		if err.Error() == "exit status 1" {
+			klog.V(log.DEBUG).Infof("Script was executed redundantly. Countinue the rest...")
+			return nil
+		} else if err.Error() == "exit status 255" {
+			klog.V(log.DEBUG).Infof("Exec %s file...", args[0])
+			return nil
+		} else {
+			return fmt.Errorf("error occur in Script File [%s]: %v", args[0], err)
+		}
+
 	}
 	return nil
 }
@@ -175,7 +184,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	}
 
 	//Create tap device  && Set up tap,wireguard device
-	err = v.scriptRun("wireguardSetLocal.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), v.ADDCidr(vppWireguardIP, "32"), DefaultDeviceName)
+	err = v.scriptRun("wireguardSetLocal.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), v.ADDCidr(vppWireguardIP, "32"), DefaultDeviceName, VPPTunIndex)
 	if err != nil {
 		return "", fmt.Errorf("Failed to Set local Device: %v", err)
 	}
@@ -236,8 +245,8 @@ func createWireguardIP(ip string) (string, error) {
 //route rule
 func (v *vpp) AddRouteVPP(remoteSubnet, localSubnet []string) error {
 	for i := range localSubnet {
-		klog.V(log.DEBUG).Infof("%s,%s,%s,%s,%s", "routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
-		err := v.scriptRun("routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun0")
+		klog.V(log.DEBUG).Infof("%s,%s,%s,%s,%s", "routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun"+VPPTunIndex)
+		err := v.scriptRun("routeSubnet.sh", v.localEndpoint.Spec.PrivateIP, localSubnet[i], v.localEndpoint.Spec.VppHostIP, "tun"+VPPTunIndex)
 		if err != nil {
 			return fmt.Errorf("Fail to local Route %v", err)
 		}
