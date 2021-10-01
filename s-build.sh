@@ -1,8 +1,12 @@
-set -e
-rm package/.image.submariner-gateway bin/linux/amd64/submariner-gateway || true
+rm package/.image.* bin/linux/amd64/submariner-* || true
 
-make  bin/linux/amd64/submariner-gateway package/.image.submariner-gateway
+make images
 
-docker tag quay.io/submariner/submariner-gateway:devel yeonwook1993/submariner-gateway:devel
-docker push yeonwook1993/submariner-gateway:devel
+for component in submariner-gateway submariner-route-agent submariner-globalnet submariner-networkplugin-syncer
+do	
+	docker tag quay.io/submariner/${component}:devel yeonwook1993/${component}:devel
+	docker tag quay.io/submariner/${component}:devel
+	docker push yeonwook1993/${component}:devel
+done
+
 chown -R classact /home/classact/vpp_wireguard/submariner

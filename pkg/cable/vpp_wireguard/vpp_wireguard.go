@@ -98,16 +98,25 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 
 	pub = priv.PublicKey()
 
+	//set VPP env in BackendConfig for Connect each cluster.
+
 	v.localEndpoint.Spec.BackendConfig[PublicKey] = pub.String()
+	v.localEndpoint.Spec.BackendConfig["VppEndpointIP"] = localEndpoint.Spec.VppEndpointIP
+	v.localEndpoint.Spec.BackendConfig["VppHostIP"] = localEndpoint.Spec.VppHostIP
+	v.localEndpoint.Spec.BackendConfig["VppIP"] = localEndpoint.Spec.VppIP
+
+	if localEndpoint.Spec.VppCidr != "" {
+		v.spec.VPPCidr = localEndpoint.Spec.VppCidr
+	}
 
 	port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
 	if err != nil {
 		return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
 	}
 	portStr := strconv.Itoa(int(port))
+
 	// configure the device. still not up
 	//create vpp_wireguard link
-
 	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
 
 	if err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr); err != nil {
@@ -153,15 +162,14 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 
 	//prepare arguments
 	allowedIPs := parseSubnets(remoteEndpoint.Spec.Subnets)
-
 	localAllowedIPs := v.localEndpoint.Spec.Subnets
+
+	remoteEndpoint.Spec.VppEndpointIP = remoteEndpoint.Spec.BackendConfig["VppEndpointIP"]
+	remoteEndpoint.Spec.VppHostIP = remoteEndpoint.Spec.BackendConfig["VppHostIP"]
+	remoteEndpoint.Spec.VppIP = remoteEndpoint.Spec.BackendConfig["VppIP"]
 
 	remoteVppEndpointIP := remoteEndpoint.Spec.VppEndpointIP
 
-	remoteRouteIP, err := v.RouteIP(remoteEndpoint.Spec.VppHostIP)
-	if err != nil {
-		return "", errors.Wrapf(err, "error making IP for route")
-	}
 	port, err := remoteEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
 	if err != nil {
 		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
@@ -174,8 +182,6 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	if err != nil {
 		return "", fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
 	}
-
-	klog.V(log.DEBUG).Infof("Connecting cluster %s endpoint %s", remoteEndpoint.Spec.ClusterID)
 
 	//Connect to remote Wireguard
 	err = v.scriptRun("wireguardConnect.sh", v.localEndpoint.Spec.PrivateIP, remoteKey, remoteVppEndpointIP, strconv.Itoa(int(port)), KeepAliveInterval)
@@ -190,7 +196,12 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	}
 
 	//Routing Settings for Subnet
-	if err = v.AddRoute(allowedIPs, net.ParseIP(v.localEndpoint.Spec.VppIP), net.ParseIP(v.localEndpoint.Spec.VppHostIP), remoteRouteIP); err != nil {
+	klog.V(log.DEBUG).Infof("remoteEndpoint ip ... %s", remoteEndpoint.Spec.VppHostIP)
+	dstRouteIP := v.createCidr(remoteEndpoint.Spec.VppHostIP)
+	if dstRouteIP == nil {
+		return "", fmt.Errorf("Failed to Set route IP.....")
+	}
+	if err = v.AddRoute(allowedIPs, net.ParseIP(v.localEndpoint.Spec.VppIP), net.ParseIP(v.localEndpoint.Spec.VppHostIP), dstRouteIP); err != nil {
 		return "", fmt.Errorf("Fail to run AddRoute %v", err)
 	}
 	//route Subnet in Vpp
@@ -254,7 +265,7 @@ func (v *vpp) AddRouteVPP(remoteSubnet, localSubnet []string) error {
 	return nil
 }
 
-func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP string) error {
+func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP *net.IPNet) error {
 	//delete default submariner routing rule
 	FlushRouteTable(150)
 	link, err := netlink.LinkByName(DefaultDeviceName)
@@ -262,6 +273,7 @@ func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP strin
 		return fmt.Errorf("unable to find vpp link.	err: %s", err)
 	}
 	for i := range ipAddressList {
+		klog.V(log.DEBUG).Infof("dst IP... %v", &ipAddressList[i])
 		route := &netlink.Route{
 			LinkIndex: link.Attrs().Index,
 			Dst:       &ipAddressList[i],
@@ -283,14 +295,10 @@ func (v *vpp) AddRoute(ipAddressList []net.IPNet, gwIP, ip net.IP, routeIP strin
 			return fmt.Errorf("unable to add the route entry %v, err: %s", route, err)
 		}
 	}
-	vppcidr, _ := strconv.Atoi(v.spec.VPPCidr)
-	dst := &net.IPNet{
-		IP:   net.ParseIP(routeIP),
-		Mask: net.CIDRMask(vppcidr, 32),
-	}
+
 	route := &netlink.Route{
 		LinkIndex: link.Attrs().Index,
-		Dst:       dst,
+		Dst:       routeIP,
 		Src:       ip,
 		Gw:        gwIP,
 		Priority:  100,
@@ -408,12 +416,14 @@ func (v *vpp) ADDCidr(ip string, cidr string) string {
 	return new_ip
 }
 
-func (v *vpp) RouteIP(ip string) (string, error) {
-	ipSlice := strings.Split(ip, ".")
-	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
+func (v *vpp) createCidr(ip string) *net.IPNet {
+	newip := ip + "/" + v.spec.VPPCidr
+	klog.V(log.DEBUG).Infof("newip ... %s", newip)
+	_, netip, err := net.ParseCIDR(newip)
+	if err != nil {
+		klog.V(log.DEBUG).Infof("err ... %v", err)
+		return nil
+	} else {
+		return netip
 	}
-	ipSlice[3] = "0"
-	routeIP := strings.Join(ipSlice, ".")
-	return routeIP, nil
 }

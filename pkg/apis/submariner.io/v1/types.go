@@ -81,9 +81,10 @@ type EndpointSpec struct {
 	NATEnabled    bool              `json:"nat_enabled"`
 	Backend       string            `json:"backend"`
 	BackendConfig map[string]string `json:"backend_config,omitempty"`
-	VppEndpointIP string            `json:"vpp_endpoint_ip"`
-	VppHostIP     string            `json:"vpp_host_ip"`
-	VppIP         string            `json:"vpp_ip"`
+	VppEndpointIP string            `json:"VppEndpointIP"`
+	VppHostIP     string            `json:"VppHostIP"`
+	VppIP         string            `json:"VppIP"`
+	VppCidr       string            `json:"VppCidr"`
 }
 
 const (

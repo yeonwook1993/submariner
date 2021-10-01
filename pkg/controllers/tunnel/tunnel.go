@@ -14,9 +14,6 @@ limitations under the License.
 package tunnel
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/submariner-io/admiral/pkg/log"
@@ -69,54 +66,13 @@ func StartController(engine cableengine.Engine, namespace string, config *watche
 func (c *controller) handleCreatedOrUpdatedEndpoint(obj runtime.Object, numRequeues int) bool {
 	endpoint := obj.(*v1.Endpoint)
 
-	// temporary select VPP IP
-	VppEndpointIP, err := createVPPEndpoint(endpoint.Spec.PrivateIP)
-	if err != nil {
-		klog.Fatalf("Error create VPP host IP in Tunnel : %s", err)
-	}
-	VppHostIP, VppIP, err := createVppIP(endpoint.Spec.PrivateIP)
-	if err != nil {
-		klog.Fatalf("Error create VPP IP & VPP HOST IP for %s in Tunnel : %v", endpoint.Spec.PrivateIP, err)
-	}
-	endpoint.Spec.VppEndpointIP = VppEndpointIP
-	endpoint.Spec.VppHostIP = VppHostIP
-	endpoint.Spec.VppIP = VppIP
-
 	klog.V(log.DEBUG).Infof("Tunnel controller processing added or updated submariner Endpoint object: %#v", endpoint)
-	err = c.engine.InstallCable(endpoint)
+	err := c.engine.InstallCable(endpoint)
 	if err != nil {
 		klog.Errorf("error installing cable for Endpoint %#v, %v", endpoint, err)
 		return true
 	}
-
 	return false
-}
-
-//create vppIface
-func createVPPEndpoint(ip string) (string, error) {
-	ipSlice := strings.Split(ip, ".")
-	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
-	}
-
-	ipSlice[2] = strconv.Itoa(100)
-	vppIP := strings.Join(ipSlice, ".")
-
-	return vppIP, nil
-}
-
-func createVppIP(ip string) (string, string, error) {
-	ipSlice := strings.Split(ip, ".")
-	if len(ipSlice) < 4 {
-		return "", "", fmt.Errorf("invalid ipAddr [%s]", ip)
-	}
-	ipSlice[0] = "140"
-	ipSlice[2] = ipSlice[3]
-	ipSlice[3] = "2"
-	hostIP := strings.Join(ipSlice, ".")
-	ipSlice[3] = "1"
-	vppIP := strings.Join(ipSlice, ".")
-	return hostIP, vppIP, nil
 }
 
 func (c *controller) handleRemovedEndpoint(obj runtime.Object, numRequeues int) bool {

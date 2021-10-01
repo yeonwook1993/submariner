@@ -1,6 +1,9 @@
 FROM fedora:33
 ARG TARGETPLATFORM
 
+ENV VPP_USER=vppuser
+ENV VPP_PASSWARD=1234
+
 WORKDIR /var/submariner
 
 # iproute is used internally
@@ -9,8 +12,9 @@ RUN dnf -y install --nodocs --setopt=install_weak_deps=0 \
            iproute libreswan sshpass openssh-server openssh-clients openssh-askpass&& \
     dnf -y clean all
 
+
 # add sript file for initiating vpp cable
 COPY package/wireguardConnect.sh package/wireguardCreate.sh package/wireguardSetLocal.sh \
-     package/submariner.sh package/routeTunnel.sh package/routeSubnet.sh \
+     package/submariner.sh package/routeSubnet.sh \
      package/pluto bin/${TARGETPLATFORM}/submariner-gateway /usr/local/bin/
 ENTRYPOINT submariner.sh
