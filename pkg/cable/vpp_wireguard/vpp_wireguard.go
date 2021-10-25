@@ -168,8 +168,6 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	remoteEndpoint.Spec.VppHostIP = remoteEndpoint.Spec.BackendConfig["VppHostIP"]
 	remoteEndpoint.Spec.VppIP = remoteEndpoint.Spec.BackendConfig["VppIP"]
 
-	remoteVppEndpointIP := remoteEndpoint.Spec.VppEndpointIP
-
 	port, err := remoteEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
 	if err != nil {
 		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
@@ -184,7 +182,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	}
 
 	//Connect to remote Wireguard
-	err = v.scriptRun("wireguardConnect.sh", v.localEndpoint.Spec.PrivateIP, remoteKey, remoteVppEndpointIP, strconv.Itoa(int(port)), KeepAliveInterval)
+	err = v.scriptRun("wireguardConnect.sh", v.localEndpoint.Spec.PrivateIP, remoteKey, remoteEndpoint.Spec.VppEndpointIP, strconv.Itoa(int(port)), KeepAliveInterval)
 	if err != nil {
 		return "", fmt.Errorf("Failed to Connection wireguard: %v", err)
 	}
