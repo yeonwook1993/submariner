@@ -69,6 +69,7 @@ type vpp struct {
 	mutex         sync.Mutex
 	spec          *specification
 	psk           *wgtypes.Key
+	pri           *wgtypes.Key
 }
 
 // NewDriver creates a new VPP driver
@@ -95,7 +96,7 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 	if priv, err = wgtypes.GeneratePrivateKey(); err != nil {
 		return nil, fmt.Errorf("error generating private key: %v", err)
 	}
-
+	v.pri = &priv
 	pub = priv.PublicKey()
 
 	//set VPP env in BackendConfig for Connect each cluster.
@@ -109,19 +110,28 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 		v.spec.VPPCidr = localEndpoint.Spec.VppCidr
 	}
 
-	port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
-	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
-	}
-	portStr := strconv.Itoa(int(port))
+	// port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
+	// }
+	// portStr := strconv.Itoa(int(port))
 
-	// configure the device. still not up
-	//create vpp_wireguard link
-	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
+	// // configure the device. still not up
+	// //create vpp_wireguard link && set wireguard ip && create tun device
+	// klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
+	// vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
+	// }
+	// if err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr)); err != nil {
+	// 	return nil, fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	// }
 
-	if err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr); err != nil {
-		return nil, fmt.Errorf("error creating vpp wireguard interface: %v", err)
-	}
+	// //Create tap device  && Set up tap,wireguard device
+	// err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Failed to Set local Device: %v", err)
+	// }
 	return &v, nil
 }
 
@@ -172,13 +182,27 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	if err != nil {
 		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
 	}
-	remoteKey, err := keyFromSpec(&remoteEndpoint.Spec)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse peer public key: %v", err)
-	}
+	portStr := strconv.Itoa(int(port))
+
+	// configure the device. still not up
+	//create vpp_wireguard link && set wireguard ip && create tun device
+	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, v.localEndpoint.Spec.BackendConfig[PublicKey])
 	vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
 	if err != nil {
 		return "", fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
+	}
+	if err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, v.pri.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr)); err != nil {
+		return "", fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	}
+
+	//Create tap device  && Set up tap,wireguard device
+	err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
+	if err != nil {
+		return "", fmt.Errorf("Failed to Set local Device: %v", err)
+	}
+	remoteKey, err := keyFromSpec(&remoteEndpoint.Spec)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse peer public key: %v", err)
 	}
 
 	//Connect to remote Wireguard
@@ -186,12 +210,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	if err != nil {
 		return "", fmt.Errorf("Failed to Connection wireguard: %v", err)
 	}
-
 	//Create tap device  && Set up tap,wireguard device
-	err = v.scriptRun("wireguardSetLocal.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), v.ADDCidr(vppWireguardIP, "32"), DefaultDeviceName, VPPTunIndex)
-	if err != nil {
-		return "", fmt.Errorf("Failed to Set local Device: %v", err)
-	}
 
 	//Routing Settings for Subnet
 	klog.V(log.DEBUG).Infof("remoteEndpoint ip ... %s", remoteEndpoint.Spec.VppHostIP)
