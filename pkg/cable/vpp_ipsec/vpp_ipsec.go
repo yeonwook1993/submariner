@@ -19,7 +19,6 @@ limitations under the License.
 package vpp
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"net"
 	"os/exec"
@@ -29,22 +28,20 @@ import (
 	"syscall"
 
 	"github.com/kelseyhightower/envconfig"
-	"github.com/pkg/errors"
 	"github.com/submariner-io/admiral/pkg/log"
 	v1 "github.com/submariner-io/submariner/pkg/apis/submariner.io/v1"
 	"github.com/submariner-io/submariner/pkg/cable"
 	"github.com/submariner-io/submariner/pkg/natdiscovery"
 	"github.com/submariner-io/submariner/pkg/types"
 	"github.com/vishvananda/netlink"
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"k8s.io/klog"
 )
 
 const (
 	// DefaultDeviceName specifies name of Vpp network device
-	PublicKey          = "publicKey"
+	IPSecKey           = "IPSecKey"
 	DefaultDeviceName  = "vpp-submariner"
-	CableDriverName    = "vpp_wireguard"
+	CableDriverName    = "vpp_ipsec"
 	VPPWireguardPrefix = "240"
 	TableID            = 150
 	specEnvPrefix      = "ce_ipsec"
@@ -68,8 +65,6 @@ type vpp struct {
 	connections   []v1.Connection
 	mutex         sync.Mutex
 	spec          *specification
-	psk           *wgtypes.Key
-	pri           *wgtypes.Key
 }
 
 // NewDriver creates a new VPP driver
@@ -81,27 +76,15 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 		spec:          new(specification),
 	}
 	if err := envconfig.Process(specEnvPrefix, v.spec); err != nil {
-		return nil, fmt.Errorf("error processing environment config for vpp_wireguard: %v", err)
+		return nil, fmt.Errorf("error processing environment config for wireguard: %v", err)
 	}
 
 	//gen public and pirvate key && set public key in BackendConfig
-	var priv, pub, psk wgtypes.Key
-
-	if psk, err = genPsk(v.spec.PSK); err != nil {
-		return nil, fmt.Errorf("error generating pre-shared key: %v", err)
-	}
-
-	v.psk = &psk
-
-	if priv, err = wgtypes.GeneratePrivateKey(); err != nil {
-		return nil, fmt.Errorf("error generating private key: %v", err)
-	}
-	v.pri = &priv
-	pub = priv.PublicKey()
 
 	//set VPP env in BackendConfig for Connect each cluster.
 
-	v.localEndpoint.Spec.BackendConfig[PublicKey] = pub.String()
+	//set VPP env in BackendConfig for Connect each cluster.
+
 	v.localEndpoint.Spec.BackendConfig["VppEndpointIP"] = localEndpoint.Spec.VppEndpointIP
 	v.localEndpoint.Spec.BackendConfig["VppHostIP"] = localEndpoint.Spec.VppHostIP
 	v.localEndpoint.Spec.BackendConfig["VppIP"] = localEndpoint.Spec.VppIP
@@ -110,50 +93,22 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 		v.spec.VPPCidr = localEndpoint.Spec.VppCidr
 	}
 
-	port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
-	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
-	}
-	portStr := strconv.Itoa(int(port))
-
 	// configure the device. still not up
-	//create vpp_wireguard link && set wireguard ip && create tun device
-	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
-	vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
-	}
+	// create tun/tap device.
 
-	err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr))
-	if err != nil {
-		klog.V(log.DEBUG).Infof("error creating vpp wireguard interface: %v", err)
-	}
-	err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
-	if err != nil {
-		klog.V(log.DEBUG).Infof("error creating vpp wireguard interface: %v", err)
+	for {
+		//Create tap device  && Set up tap,wireguard device
+		err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
+		if err != nil {
+			klog.V(log.DEBUG).Infof("Failed to Set local Device: %v", err)
+			continue // Script file doesn`t exec.
+		}
+		break // if Function works Successfully.
 	}
 	return &v, nil
 }
 
 func (v *vpp) Init() error {
-	return nil
-}
-
-// scriptRun using VPP command
-func (v *vpp) scriptRun(args ...string) error {
-	cmd := exec.Command("sh", args...)
-	if err := cmd.Run(); err != nil {
-		if err.Error() == "exit status 1" {
-			klog.V(log.DEBUG).Infof("Script was executed redundantly. Countinue the rest...")
-			return nil
-		} else if err.Error() == "exit status 255" {
-			klog.V(log.DEBUG).Infof("Exec %s file...", args[0])
-			return nil
-		} else {
-			return fmt.Errorf("error occur in Script File [%s]: %v", args[0], err)
-		}
-
-	}
 	return nil
 }
 
@@ -177,42 +132,31 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	remoteEndpoint.Spec.VppEndpointIP = remoteEndpoint.Spec.BackendConfig["VppEndpointIP"]
 	remoteEndpoint.Spec.VppHostIP = remoteEndpoint.Spec.BackendConfig["VppHostIP"]
 	remoteEndpoint.Spec.VppIP = remoteEndpoint.Spec.BackendConfig["VppIP"]
-
-	port, err := remoteEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
+	localkey, err := keyFromSpec(&v.localEndpoint.Spec)
 	if err != nil {
-		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
+		return "", fmt.Errorf("Key Error: %v", err)
 	}
-
-	remoteKey, err := keyFromSpec(&remoteEndpoint.Spec)
+	remotekey, err := keyFromSpec(&remoteEndpoint.Spec)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse peer public key: %v", err)
+		return "", fmt.Errorf("Key Error: %v", err)
 	}
-
-	//Connect to remote Wireguard
-
-	//Make Sentence ex) allowed-ip x.x.x.x/x allowed-ip x.x.x.x/x ...
-	allowedSentence, err := makeAllowedIP(remoteEndpoint.Spec.VppHostIP, allowedIPs)
-	if err != nil {
-		return "", fmt.Errorf("Failed to make sentence allowedIP : %v", err)
-	}
-	err = v.scriptRun("wireguardConnect.sh", v.localEndpoint.Spec.PrivateIP, remoteKey, remoteEndpoint.Spec.VppEndpointIP, strconv.Itoa(int(port)), KeepAliveInterval, allowedSentence)
+	klog.V(log.DEBUG).Infof("local key : %s\n remote key : %s", localkey, remotekey)
+	//set ipsec configuration
+	err = v.scriptRun("createIPSecTunnel.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, remoteEndpoint.Spec.VppEndpointIP, v.makespi(v.localEndpoint.Spec.VppEndpointIP), remoteEndpoint.Spec.VppEndpointIP, localkey, remotekey)
 	if err != nil {
 		return "", fmt.Errorf("Failed to Connection wireguard: %v", err)
 	}
-
-	//Create tap device  && Set up tap,wireguard device
-
 	//Routing Settings for Subnet
 	klog.V(log.DEBUG).Infof("remoteEndpoint ip ... %s", remoteEndpoint.Spec.VppHostIP)
 	dstRouteIP := v.createCidr(remoteEndpoint.Spec.VppHostIP)
 	if dstRouteIP == nil {
 		return "", fmt.Errorf("Failed to Set route IP.....")
 	}
-	if err = v.AddRoute(allowedIPs, net.ParseIP(v.localEndpoint.Spec.VppIP), net.ParseIP(v.localEndpoint.Spec.VppHostIP), dstRouteIP); err != nil {
+	if err := v.AddRoute(allowedIPs, net.ParseIP(v.localEndpoint.Spec.VppIP), net.ParseIP(v.localEndpoint.Spec.VppHostIP), dstRouteIP); err != nil {
 		return "", fmt.Errorf("Fail to run AddRoute %v", err)
 	}
 	//route Subnet in Vpp
-	if err = v.AddRouteVPP(remoteEndpoint.Spec.Subnets, localAllowedIPs); err != nil {
+	if err := v.AddRouteVPP(remoteEndpoint.Spec.Subnets, localAllowedIPs); err != nil {
 		return "", fmt.Errorf("Fail to AddRoute VPP %v", err)
 	}
 
@@ -224,7 +168,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 }
 
 func keyFromSpec(ep *v1.EndpointSpec) (string, error) {
-	s, found := ep.BackendConfig[PublicKey]
+	s, found := ep.BackendConfig[IPSecKey]
 	if !found {
 		return "", fmt.Errorf("endpoint is missing public key")
 	}
@@ -248,16 +192,6 @@ func parseSubnets(subnets []string) []net.IPNet {
 	}
 
 	return nets
-}
-
-func createWireguardIP(ip string) (string, error) {
-	ipSlice := strings.Split(ip, ".")
-	if len(ipSlice) < 4 {
-		return "", fmt.Errorf("invalid ipAddr [%s]", ip)
-	}
-	ipSlice[0] = VPPWireguardPrefix
-	wgIP := strings.Join(ipSlice, ".")
-	return wgIP, nil
 }
 
 //route rule
@@ -412,12 +346,6 @@ func FlushRouteTable(tableID int) error {
 	return exec.Command("/sbin/ip", "r", "flush", "table", strconv.Itoa(tableID)).Run()
 }
 
-func genPsk(psk string) (wgtypes.Key, error) {
-	// Convert spec PSK string to right length byte array, using sha256.Size == wgtypes.KeyLen
-	pskBytes := sha256.Sum256([]byte(psk))
-	return wgtypes.NewKey(pskBytes[:])
-}
-
 func (v *vpp) ADDCidr(ip string, cidr string) string {
 	new_ip := ip + "/" + cidr
 	return new_ip
@@ -435,11 +363,25 @@ func (v *vpp) createCidr(ip string) *net.IPNet {
 	}
 }
 
-func makeAllowedIP(remoteHostIP string, ipAddressList []net.IPNet) (string, error) {
-	res := "allowed-ip" + remoteHostIP
-	for i := range ipAddressList {
-		ip := ipAddressList[i].String()
-		res = res + "allowed-ip" + ip
+// scriptRun using VPP command
+func (v *vpp) scriptRun(args ...string) error {
+	cmd := exec.Command("sh", args...)
+	if err := cmd.Run(); err != nil {
+		if err.Error() == "exit status 1" {
+			klog.V(log.DEBUG).Infof("Script was executed redundantly. Countinue the rest...")
+			return nil
+		} else if err.Error() == "exit status 255" {
+			klog.V(log.DEBUG).Infof("Exec %s file...", args[0])
+			return nil
+		} else {
+			return fmt.Errorf("error occur in Script File [%s]: %v", args[0], err)
+		}
+
 	}
-	return res, nil
+	return nil
+}
+
+func (v *vpp) makespi(ip string) string {
+	ipSlice := strings.Split(ip, ".")
+	return ipSlice[3]
 }
