@@ -31,7 +31,6 @@ import (
 
 	// Add supported drivers
 	_ "github.com/submariner-io/submariner/pkg/cable/libreswan"
-	_ "github.com/submariner-io/submariner/pkg/cable/vpp_ipsec"
 	_ "github.com/submariner-io/submariner/pkg/cable/vpp_wireguard"
 	_ "github.com/submariner-io/submariner/pkg/cable/vxlan"
 	_ "github.com/submariner-io/submariner/pkg/cable/wireguard"

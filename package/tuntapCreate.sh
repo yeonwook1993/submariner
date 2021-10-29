@@ -10,14 +10,14 @@ _TUN_LIST=$(sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChe
 
 #If Exist tun10, delete & new Create one.
 if [ -n "$_TUN_LIST" ]; then
-    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl delete tap tun10
-    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl create tap id $_index host-if-name $_device_name host-ip4-addr $_vpp_host_ip tun
+    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl delete tap tun$_index
+    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl create tap id $_index host-if-name $_device_name host-ip4-addr $_vpp_host_ip host-mtu-size 1420 tun
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl set interface state tun$_index up
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl set interface ip addr tun$_index $_vpp_ip
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no ifconfig $_device_name up
     exit 1
 else
-    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl create tap id $_index host-if-name $_device_name host-ip4-addr $_vpp_host_ip tun
+    sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl create tap id $_index host-if-name $_device_name host-ip4-addr $_vpp_host_ip host-mtu-size 1420 tun
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl set interface state tun$_index up
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no vppctl set interface ip addr tun$_index $_vpp_ip
     sshpass -p$VPP_PASSWARD ssh $VPP_USER@$_endpoint -o StrictHostKeyChecking=no ifconfig $_device_name up

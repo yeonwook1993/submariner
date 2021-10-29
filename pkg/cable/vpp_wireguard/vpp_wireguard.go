@@ -110,28 +110,28 @@ func NewDriver(localEndpoint types.SubmarinerEndpoint, localCluster types.Submar
 		v.spec.VPPCidr = localEndpoint.Spec.VppCidr
 	}
 
-	port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
-	if err != nil {
-		return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
-	}
-	portStr := strconv.Itoa(int(port))
+	// port, err := localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
+	// if err != nil {
+	// 	return nil, errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
+	// }
+	// portStr := strconv.Itoa(int(port))
 
-	// configure the device. still not up
-	//create vpp_wireguard link && set wireguard ip && create tun device
-	klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
-	vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
-	}
+	// // configure the device. still not up
+	// //create vpp_wireguard link && set wireguard ip && create tun device
+	// klog.V(log.DEBUG).Infof("Created VPP_WireGuard %s with publicKey %s", DefaultDeviceName, pub)
+	// vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
+	// }
 
-	err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr))
-	if err != nil {
-		klog.V(log.DEBUG).Infof("error creating vpp wireguard interface: %v", err)
-	}
-	err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
-	if err != nil {
-		klog.V(log.DEBUG).Infof("error creating vpp wireguard interface: %v", err)
-	}
+	// err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, priv.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr))
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	// }
+	// err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	// }
 	return &v, nil
 }
 
@@ -146,13 +146,14 @@ func (v *vpp) scriptRun(args ...string) error {
 		if err.Error() == "exit status 1" {
 			klog.V(log.DEBUG).Infof("Script was executed redundantly. Countinue the rest...")
 			return nil
+		} else if err.Error() == "exit status 100" {
+			klog.V(log.DEBUG).Infof("VPP Application ocurr Error")
 		} else if err.Error() == "exit status 255" {
-			klog.V(log.DEBUG).Infof("Exec %s file...", args[0])
+			klog.V(log.DEBUG).Infof("Exec %s File...", args[0])
 			return nil
 		} else {
 			return fmt.Errorf("error occur in Script File [%s]: %v", args[0], err)
 		}
-
 	}
 	return nil
 }
@@ -169,16 +170,36 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 
 	v.mutex.Lock()
 	defer v.mutex.Unlock()
+	port, err := v.localEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
+	if err != nil {
+		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
+	}
+	portStr := strconv.Itoa(int(port))
 
+	// configure the device. still not up
+	//create vpp_wireguard link && set wireguard ip && create tun device
+
+	vppWireguardIP, err := createWireguardIP(v.localEndpoint.Spec.VppIP)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Wireguard Interface IP : %v", err)
+	}
+
+	err = v.scriptRun("wireguardCreate.sh", v.localEndpoint.Spec.PrivateIP, v.localEndpoint.Spec.VppEndpointIP, v.pri.String(), portStr, v.ADDCidr(vppWireguardIP, v.spec.VPPCidr))
+	if err != nil {
+		return "", fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	}
+	err = v.scriptRun("tuntapCreate.sh", v.localEndpoint.Spec.PrivateIP, v.ADDCidr(v.localEndpoint.Spec.VppHostIP, v.spec.VPPCidr), v.ADDCidr(v.localEndpoint.Spec.VppIP, v.spec.VPPCidr), DefaultDeviceName, VPPTunIndex)
+	if err != nil {
+		return "", fmt.Errorf("error creating vpp wireguard interface: %v", err)
+	}
 	//prepare arguments
 	allowedIPs := parseSubnets(remoteEndpoint.Spec.Subnets)
 	localAllowedIPs := v.localEndpoint.Spec.Subnets
-
 	remoteEndpoint.Spec.VppEndpointIP = remoteEndpoint.Spec.BackendConfig["VppEndpointIP"]
 	remoteEndpoint.Spec.VppHostIP = remoteEndpoint.Spec.BackendConfig["VppHostIP"]
 	remoteEndpoint.Spec.VppIP = remoteEndpoint.Spec.BackendConfig["VppIP"]
 
-	port, err := remoteEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
+	port, err = remoteEndpoint.Spec.GetBackendPort(v1.UDPPortConfig, int32(v.spec.NATTPort))
 	if err != nil {
 		return "", errors.Wrapf(err, "error parsing %q from local endpoint", v1.UDPPortConfig)
 	}
@@ -191,7 +212,7 @@ func (v *vpp) ConnectToEndpoint(endpointInfo *natdiscovery.NATEndpointInfo) (str
 	//Connect to remote Wireguard
 
 	//Make Sentence ex) allowed-ip x.x.x.x/x allowed-ip x.x.x.x/x ...
-	allowedSentence, err := makeAllowedIP(remoteEndpoint.Spec.VppHostIP, allowedIPs)
+	allowedSentence, err := makeAllowedIP(v.createCidr(remoteEndpoint.Spec.VppHostIP).String(), allowedIPs)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make sentence allowedIP : %v", err)
 	}
