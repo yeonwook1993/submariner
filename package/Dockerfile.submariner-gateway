@@ -15,6 +15,6 @@ RUN dnf -y install --nodocs --setopt=install_weak_deps=0 \
 
 # add sript file for initiating vpp cable
 COPY package/wireguardConnect.sh package/wireguardCreate.sh package/tuntapCreate.sh \
-     package/submariner.sh package/routeSubnet.sh package/createIPSecTunnel.sh \
+     package/submariner.sh package/routeSubnet.sh  \
      package/pluto bin/${TARGETPLATFORM}/submariner-gateway /usr/local/bin/
 ENTRYPOINT submariner.sh

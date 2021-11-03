@@ -65,18 +65,19 @@ func GetLocal(submSpec types.SubmarinerSpecification, k8sClient kubernetes.Inter
 
 	endpoint := types.SubmarinerEndpoint{
 		Spec: submv1.EndpointSpec{
-			CableName:     fmt.Sprintf("submariner-cable-%s-%s", submSpec.ClusterID, strings.ReplaceAll(privateIP, ".", "-")),
-			ClusterID:     submSpec.ClusterID,
-			Hostname:      hostname,
-			PrivateIP:     privateIP,
-			NATEnabled:    submSpec.NATEnabled,
-			Subnets:       localSubnets,
-			Backend:       submSpec.CableDriver,
-			BackendConfig: backendConfig,
-			VppEndpointIP: submSpec.VppEndpointIP,
-			VppHostIP:     submSpec.VppHostIP,
-			VppIP:         submSpec.VppIP,
-			VppCidr:       submSpec.VppCidr,
+			CableName:       fmt.Sprintf("submariner-cable-%s-%s", submSpec.ClusterID, strings.ReplaceAll(privateIP, ".", "-")),
+			ClusterID:       submSpec.ClusterID,
+			Hostname:        hostname,
+			PrivateIP:       privateIP,
+			NATEnabled:      submSpec.NATEnabled,
+			Subnets:         localSubnets,
+			Backend:         submSpec.CableDriver,
+			BackendConfig:   backendConfig,
+			VppEndpointIP:   submSpec.VppEndpointIP,
+			VppHostIP:       submSpec.VppHostIP,
+			VppIP:           submSpec.VppIP,
+			VppCIDR:         submSpec.VppCIDR,
+			VppEndpointCIDR: submSpec.VppEndpointCIDR,
 		},
 	}
 

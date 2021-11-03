@@ -73,18 +73,19 @@ type EndpointSpec struct {
 	ClusterID string `json:"cluster_id"`
 	CableName string `json:"cable_name"`
 	// +optional
-	HealthCheckIP string            `json:"healthCheckIP,omitempty"`
-	Hostname      string            `json:"hostname"`
-	Subnets       []string          `json:"subnets"`
-	PrivateIP     string            `json:"private_ip"`
-	PublicIP      string            `json:"public_ip"`
-	NATEnabled    bool              `json:"nat_enabled"`
-	Backend       string            `json:"backend"`
-	BackendConfig map[string]string `json:"backend_config,omitempty"`
-	VppEndpointIP string            `json:"VppEndpointIP"`
-	VppHostIP     string            `json:"VppHostIP"`
-	VppIP         string            `json:"VppIP"`
-	VppCidr       string            `json:"VppCidr"`
+	HealthCheckIP   string            `json:"healthCheckIP,omitempty"`
+	Hostname        string            `json:"hostname"`
+	Subnets         []string          `json:"subnets"`
+	PrivateIP       string            `json:"private_ip"`
+	PublicIP        string            `json:"public_ip"`
+	NATEnabled      bool              `json:"nat_enabled"`
+	Backend         string            `json:"backend"`
+	BackendConfig   map[string]string `json:"backend_config,omitempty"`
+	VppEndpointIP   string            `json:"VppEndpointIP"`
+	VppHostIP       string            `json:"VppHostIP"`
+	VppIP           string            `json:"VppIP"`
+	VppCIDR         string            `json:"VppCIDR"`
+	VppEndpointCIDR string            `json:"VppEndpointCIDR"`
 }
 
 const (

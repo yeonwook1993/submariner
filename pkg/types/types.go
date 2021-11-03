@@ -49,7 +49,8 @@ type SubmarinerSpecification struct {
 	VppEndpointIP                 string
 	VppHostIP                     string
 	VppIP                         string
-	VppCidr                       string
+	VppCIDR                       string
+	VppEndpointCIDR               string
 }
 
 type Secure struct {
