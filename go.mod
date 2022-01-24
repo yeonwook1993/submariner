@@ -10,14 +10,14 @@ require (
 	github.com/go-ping/ping v0.0.0-20210407214646-e4e642a95741
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/onsi/ginkgo v1.16.4
-	github.com/onsi/gomega v1.13.0
+	github.com/onsi/gomega v1.18.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.11.0
 	github.com/submariner-io/admiral v0.10.0-m1.0.20210602113843-3b8dfd67945b
 	github.com/submariner-io/shipyard v0.10.0-m2
 	github.com/uw-labs/lichen v0.1.4
 	github.com/vishvananda/netlink v1.1.0
-	golang.org/x/sys v0.0.0-20210603081109-ebe580a85c40
+	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20210427135350-f9ad6d392236
 	google.golang.org/protobuf v1.26.0
 	k8s.io/api v0.21.0
